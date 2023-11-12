@@ -2,9 +2,11 @@ import os
 import json
 import tempfile
 import uuid
+
 from typing import Dict
 from github import Github, UnknownObjectException, GithubException
 from cookiecutter.main import cookiecutter
+
 from google.cloud import storage, iam
 from google.oauth2 import service_account
 
@@ -23,10 +25,11 @@ def read_file_from_bucket(bucket_name: str, source_blob_name: str) -> str:
     storage_client = storage.Client(project='ml-framework-config')
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(source_blob_name)
+
     return blob.download_as_text()
 
 
-def create_service_account(
+def create_service_account_ml_framework_projects(
     account_name: str, account_description: str,
     project_id: str, service_account_key_json: Dict
 ) -> str:
@@ -63,6 +66,7 @@ def create_service_account(
         service_account_id=account_id
     )
     created_account = service.create_service_account(request=request)
+
     return f"Service account created: {created_account.name}"
 
 
@@ -87,9 +91,12 @@ def create_github_project_using_cookiecutter(
         g = Github(github_token)
         user = g.get_user()
         user.get_repo(new_project_name)
+        
         return f'Repository {new_project_name} already exists'
     except UnknownObjectException:
         try:
+            g = Github(github_token)
+            user = g.get_user()
             user.create_repo(new_project_name, private=True)
         except GithubException as e:
             return f'Repository creation error: {str(e)}'
@@ -112,6 +119,7 @@ def create_github_project_using_cookiecutter(
         )
         os.system('git remote -v')
         os.system('git push -u origin main')
+        
         return f'Repository {new_project_name} was created'
 
 
@@ -153,13 +161,19 @@ def create_github_project_with_service_accounts(
         f'{new_application_name} located in '
         f'https://github.com/aquilesIIIMB/{new_project_name}.git'
     )
+    config_input['serviceAccountMaasName'] = (
+        f"{new_service_account_maas_name}@{maas_project_id}.iam.gserviceaccount.com"
+    )
+    config_input['serviceAccountExplorationName'] = ""
+    config_input['serviceAccountDiscoveryName'] = ""
+
 
     create_github_project_using_cookiecutter(
         github_token, new_project_name, config_input, 
         user_name, user_email
     )
 
-    create_service_account(
+    create_service_account_ml_framework_projects(
         new_service_account_maas_name, 
         description_new_service_account_maas, 
         maas_project_id, credential_maas_json
