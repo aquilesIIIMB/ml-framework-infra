@@ -7,8 +7,9 @@ from typing import Dict
 from github import Github, UnknownObjectException, GithubException
 from cookiecutter.main import cookiecutter
 
-from google.cloud import storage, iam
+from google.cloud import storage
 from google.oauth2 import service_account
+import googleapiclient.discovery 
 
 
 def read_file_from_bucket(bucket_name: str, source_blob_name: str) -> str:
@@ -50,56 +51,59 @@ def create_service_account_ml_framework_projects(
     credentials = service_account.Credentials.from_service_account_info(
         service_account_key_json
     )
-    service = iam.ServiceAccountServiceClient(credentials=credentials)
-    parent = f"projects/{project_id}"
-    account_id = f"{account_name}@{project_id}.iam.gserviceaccount.com"
-    service_account_info = {
-        "account_id": account_name,
-        "service_account": {
-            "display_name": account_name,
-            "description": account_description
-        }
-    }
-    request = iam.CreateServiceAccountRequest(
-        parent=parent,
-        service_account=service_account_info,
-        service_account_id=account_id
+    client = googleapiclient.discovery.build("iam", "v1", credentials=credentials)
+    created_account = (
+        client.projects()
+        .serviceAccounts()
+        .create(
+            name="projects/" + project_id,
+            body={
+                "accountId": account_name, 
+                "serviceAccount": {
+                    "displayName": account_name,
+                    "description": account_description
+                }
+            }
+        )
+        .execute()
     )
-    created_account = service.create_service_account(request=request)
 
-    return f"Service account created: {created_account.name}"
+    return f'Service account created: {created_account["email"]}'
 
 
 def create_github_project_using_cookiecutter(
-    github_token: str, new_project_name: str, 
+    github_token: str, new_project_name: str, template_url: str,
     config_input: Dict, user_name: str, user_email: str
-) -> str:
+) -> int:
     """
     Creates a new GitHub repository for a project, using the cookiecutter template.
 
     Args:
     - github_token (str): The GitHub token for authentication.
     - new_project_name (str): The name for the new GitHub repository.
-    - config_input (Dict): Configuration data to pass to cookiecutter for template customization.
+    - config_input (Dict): Configuration data to pass to cookiecutter for 
+        template customization.
     - user_name (str): GitHub user name for setting up the repository.
     - user_email (str): GitHub user email for setting up the repository.
 
     Returns:
-    - str: A message indicating the result of the operation (repository creation or error message).
+    - int: A message indicating the result of the operation 
+        (repository creation or error message).
     """
     try:
         g = Github(github_token)
         user = g.get_user()
         user.get_repo(new_project_name)
-        
-        return f'Repository {new_project_name} already exists'
+        print(f'Repository {new_project_name} already exists')
+        return 0
     except UnknownObjectException:
         try:
             g = Github(github_token)
             user = g.get_user()
             user.create_repo(new_project_name, private=True)
         except GithubException as e:
-            return f'Repository creation error: {str(e)}'
+            print(f'Repository creation error: {str(e)}')
+            return 0
 
     with tempfile.TemporaryDirectory() as tmpdirname:
         cookiecutter(
@@ -115,12 +119,12 @@ def create_github_project_using_cookiecutter(
         os.system('git commit -m "Initial commit"')
         os.system(
             f'git remote add origin https://{github_token}@github.com/'
-            f'{new_project_name}.git'
+            f'aquilesIIIMB/{new_project_name}.git'
         )
         os.system('git remote -v')
         os.system('git push -u origin main')
-        
-        return f'Repository {new_project_name} was created'
+        print(f'Repository {new_project_name} was created')
+        return 1
 
 
 def create_github_project_with_service_accounts(
@@ -168,13 +172,13 @@ def create_github_project_with_service_accounts(
     config_input['serviceAccountDiscoveryName'] = ""
 
 
-    create_github_project_using_cookiecutter(
-        github_token, new_project_name, config_input, 
-        user_name, user_email
-    )
+    if create_github_project_using_cookiecutter(
+        github_token, new_project_name, template_url, 
+        config_input, user_name, user_email
+    ):
 
-    create_service_account_ml_framework_projects(
-        new_service_account_maas_name, 
-        description_new_service_account_maas, 
-        maas_project_id, credential_maas_json
-    )
+        create_service_account_ml_framework_projects(
+            new_service_account_maas_name, 
+            description_new_service_account_maas, 
+            maas_project_id, credential_maas_json
+        )
