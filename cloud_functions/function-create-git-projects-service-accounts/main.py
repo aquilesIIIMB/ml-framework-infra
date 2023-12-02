@@ -55,9 +55,7 @@ def sanitize_name(
         ValueError: If the sanitized name is empty.
     """
     # Remove special characters and spaces, and convert to lowercase
-    name = re.sub(r'[^a-zA-Z0-9-]', '', name.lower())
-    # Remove consecutive hyphens and leading/trailing hyphens
-    name = re.sub(r'-+', '-', name).strip('-')
+    name = re.sub(r'[^a-zA-Z0-9-_]', '', name.lower())
 
     # Ensure the name is not empty
     if not name:
@@ -80,6 +78,7 @@ def generate_bucket_name(
     """
     # Sanitize the app name
     sanitized_app_name = sanitize_name(app_name)
+    sanitized_app_name = sanitized_app_name.replace('_', '-')
     # Generate a UUID4 code
     uuid_code = str(uuid.uuid4())
     # Maximum length for the UUID4 code to fit within 63 characters
@@ -111,6 +110,7 @@ def generate_dataset_name(
     """
     # Sanitize the app name
     sanitized_app_name = sanitize_name(app_name)
+    sanitized_app_name = sanitized_app_name.replace('-', '_')
 
     # Create the dataset name using just the sanitized app name 
     dataset_name = sanitized_app_name[:1024]
