@@ -141,8 +141,8 @@ def create_gcs_bucket(
         bucket.storage_class = bucket_class
         bucket = storage_client.create_bucket(bucket, project=project_id, location=bucket_location) 
         logging.info(f"Bucket {bucket.name} created.")
-    except Conflict: 
-        logging.info(f"Bucket {bucket_name} already exists.")
+    except Exception as e:
+        logging.info(f"Failed to create dataset: {e}")
     
 
 def create_bq_dataset(
@@ -161,10 +161,13 @@ def create_bq_dataset(
     """
     bigquery_client = bigquery.Client(project=project_id)
     try:
-        dataset = bigquery_client.create_dataset(dataset_name, project=project_id, location=dataset_location)
+        dataset = bigquery.Dataset(bigquery_client.dataset(dataset_name))
+        dataset.location = dataset_location
+        dataset.labels = {"application_name": app_name, "git_project": git_project_name}
+        dataset = bigquery_client.create_dataset(dataset, project=project_id)
         logging.info(f'Dataset {dataset.dataset_id} created.')
-    except AlreadyExists:
-        logging.info(f'Dataset {dataset_name} already exists.')
+    except Exception as e:
+        logging.info(f"Failed to create dataset: {e}")
 
 
 def read_file_from_bucket(
