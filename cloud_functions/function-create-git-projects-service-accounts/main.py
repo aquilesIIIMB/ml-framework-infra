@@ -81,7 +81,7 @@ def generate_bucket_name(
     # Sanitize the app name
     sanitized_app_name = sanitize_name(app_name)
     # Generate a UUID4 code
-    uuid_code = str(uuid.uuid4()).replace('-', '')
+    uuid_code = str(uuid.uuid4())
     # Maximum length for the UUID4 code to fit within 63 characters
     max_uuid_length = 63 - len(sanitized_app_name) - 1  # Subtract 1 for the hyphen
 
@@ -111,19 +111,9 @@ def generate_dataset_name(
     """
     # Sanitize the app name
     sanitized_app_name = sanitize_name(app_name)
-    # Generate a UUID4 code
-    uuid_code = str(uuid.uuid4()).replace('-', '')
-    # Maximum length for the UUID4 code to fit within 1024 characters (BigQuery limit)
-    max_uuid_length = 1024 - len(sanitized_app_name) - 1  # Subtract 1 for the underscore
 
-    if max_uuid_length < 1:
-        # Create the dataset name using just the sanitized app name 
-        dataset_name = sanitized_app_name[:1024]
-    else:  
-        # Truncate or limit the UUID4 code to fit within the maximum length
-        truncated_uuid_code = uuid_code[:max_uuid_length]
-        # Concatenate the sanitized app name and truncated UUID4 code with an underscore
-        dataset_name = f"{sanitized_app_name}_{truncated_uuid_code}"
+    # Create the dataset name using just the sanitized app name 
+    dataset_name = sanitized_app_name[:1024]
 
     return dataset_name
 
@@ -368,8 +358,12 @@ def create_github_project_with_service_accounts(
 
         create_gcs_bucket(
             bucket_name,
+            new_application_name,
+            new_project_name,
         )
 
         create_bq_dataset(
             dataset_name,
+            new_application_name,
+            new_project_name,
         )
