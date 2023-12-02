@@ -318,7 +318,7 @@ def create_github_project_with_service_accounts(
     )
     user_name = 'aquilesIIIMB'
     user_email = 'aquiles.martinez@ug.uchile.cl'
-    bucket_name = 'bucket-create-git-projects-service-accounts'
+    bucket_name = 'bucket-create-git-projects-b89ce4a5-a3a8-486d-a156-4366af1fe5dc'
     config_input = json.loads(
         read_file_from_bucket(bucket_name, file_event['name'])
     )
