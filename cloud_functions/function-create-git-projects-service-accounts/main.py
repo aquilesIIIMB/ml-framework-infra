@@ -120,8 +120,9 @@ def generate_dataset_name(
 
 def create_gcs_bucket(
     bucket_name: str, 
+    project_id: str,
     app_name: str,
-    project_name: str,
+    git_project_name: str,
     bucket_location: str = "us-central1", 
     bucket_class: str = "STANDARD",
 ) -> None:
@@ -133,12 +134,12 @@ def create_gcs_bucket(
     - bucket_location (str): The GCP location to host the Google Cloud Storage Bucket. 
     - bucket_class (str): Kind of Google Cloud Storage Bucket depending on storage time. Possible values: STANDARD, NEARLINE, COLDLINE.
     """
-    storage_client = storage.Client(project='ml-framework-config')
+    storage_client = storage.Client(project=project_id)
     try:
         bucket = storage.Bucket(storage_client, name=bucket_name)
-        bucket.labels = {"applicationName": app_name, "gitProject": project_name}
+        bucket.labels = {"application_name": app_name, "git_project": git_project_name}
         bucket.storage_class = bucket_class
-        bucket = storage_client.create_bucket(bucket, project='ml-framework-config', location=bucket_location) 
+        bucket = storage_client.create_bucket(bucket, project=project_id, location=bucket_location) 
         logging.info(f"Bucket {bucket.name} created.")
     except Conflict: 
         logging.info(f"Bucket {bucket_name} already exists.")
@@ -146,8 +147,9 @@ def create_gcs_bucket(
 
 def create_bq_dataset(
     dataset_name: str, 
+    project_id: str,
     app_name: str,
-    project_name: str,
+    git_project_name: str,
     dataset_location="us-central1"
 ) -> None:
     """
@@ -157,9 +159,9 @@ def create_bq_dataset(
     - dataset_name (str): The name of the Bigquery Dataset.
     - dataset_location (str): The GCP location to host the Bigquery Dataset.
     """
-    bigquery_client = bigquery.Client(project='ml-framework-config')
+    bigquery_client = bigquery.Client(project=project_id)
     try:
-        dataset = bigquery_client.create_dataset(dataset_name, project='ml-framework-config', location=dataset_location)
+        dataset = bigquery_client.create_dataset(dataset_name, project=project_id, location=dataset_location)
         logging.info(f'Dataset {dataset.dataset_id} created.')
     except AlreadyExists:
         logging.info(f'Dataset {dataset_name} already exists.')
@@ -358,12 +360,14 @@ def create_github_project_with_service_accounts(
 
         create_gcs_bucket(
             bucket_name,
+            maas_project_id,
             new_application_name,
             new_project_name,
         )
 
         create_bq_dataset(
             dataset_name,
+            maas_project_id.
             new_application_name,
             new_project_name,
         )
