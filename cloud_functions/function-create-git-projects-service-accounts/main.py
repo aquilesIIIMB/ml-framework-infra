@@ -123,6 +123,7 @@ def create_gcs_bucket(
     project_id: str,
     app_name: str,
     git_project_name: str,
+    service_account_key_json: Dict,
     bucket_location: str = "us-central1", 
     bucket_class: str = "STANDARD",
 ) -> None:
@@ -134,7 +135,9 @@ def create_gcs_bucket(
     - bucket_location (str): The GCP location to host the Google Cloud Storage Bucket. 
     - bucket_class (str): Kind of Google Cloud Storage Bucket depending on storage time. Possible values: STANDARD, NEARLINE, COLDLINE.
     """
-    storage_client = storage.Client(project=project_id)
+    storage_client = storage.Client.from_service_account_info(
+        service_account_key_json
+    )
     try:
         bucket = storage.Bucket(storage_client, name=bucket_name)
         bucket.labels = {"application_name": app_name, "git_project": git_project_name}
@@ -150,6 +153,7 @@ def create_bq_dataset(
     project_id: str,
     app_name: str,
     git_project_name: str,
+    service_account_key_json: Dict,
     dataset_location="us-central1"
 ) -> None:
     """
@@ -159,12 +163,14 @@ def create_bq_dataset(
     - dataset_name (str): The name of the Bigquery Dataset.
     - dataset_location (str): The GCP location to host the Bigquery Dataset.
     """
-    bigquery_client = bigquery.Client(project=project_id)
+    bigquery_client = bigquery.Client.from_service_account_info(
+        service_account_key_json
+    )
     try:
-        dataset = bigquery.Dataset(bigquery_client.dataset(dataset_name))
+        dataset = bigquery.Dataset(bigquery_client.dataset(dataset_name, project=project_id))
         dataset.location = dataset_location
         dataset.labels = {"application_name": app_name, "git_project": git_project_name}
-        dataset = bigquery_client.create_dataset(dataset, project=project_id)
+        dataset = bigquery_client.create_dataset(dataset)
         logging.info(f'Dataset {dataset.dataset_id} created.')
     except Exception as e:
         logging.info(f"Failed to create dataset: {e}")
@@ -366,11 +372,13 @@ def create_github_project_with_service_accounts(
             maas_project_id,
             new_application_name,
             new_project_name,
+            credential_maas_json
         )
 
         create_bq_dataset(
             dataset_name,
-            maas_project_id.
+            maas_project_id,
             new_application_name,
             new_project_name,
+            credential_maas_json
         )
