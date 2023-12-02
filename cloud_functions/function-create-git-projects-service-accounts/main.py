@@ -2,17 +2,183 @@ import os
 import json
 import tempfile
 import uuid
+import re
 
 from typing import Dict
 from github import Github, UnknownObjectException, GithubException
 from cookiecutter.main import cookiecutter
 
 from google.cloud import storage
+from google.cloud import bigquery
 from google.oauth2 import service_account
 import googleapiclient.discovery 
+from google.api_core.exceptions import Conflict
+import logging
+from google.cloud import logging as gcp_logging
 
 
-def read_file_from_bucket(bucket_name: str, source_blob_name: str) -> str:
+def setup_logging(
+    log_level=logging.INFO
+) -> None:
+    """
+    Set up Python logging with a custom logging level and send log messages to Google Cloud Logging.
+    
+    Args:
+        log_level (int): The desired logging level, e.g., logging.DEBUG, logging.INFO, logging.WARNING, etc.
+    """
+    # Create a Google Cloud Logging client
+    logging_client = gcp_logging.Client()
+    # Get the default logging handler for Google Cloud Logging
+    handler = logging_client.get_default_handler()
+    # Get the root logger
+    root_logger = logging.getLogger()
+    # Set the logging level to INFO (you can adjust this level as needed)
+    root_logger.setLevel(log_level)
+    # Add the Google Cloud Logging handler to the root logger
+    root_logger.addHandler(handler)
+
+
+def sanitize_name(
+    name: str
+) -> str:
+    """
+    Sanitizes a given string by removing special characters and spaces, converting it to lowercase, 
+    and ensuring it doesn't contain consecutive or trailing hyphens.
+
+    Args:
+        name (str): The string to be sanitized.
+
+    Returns:
+        str: A sanitized string suitable for use as a bucket or dataset name.
+
+    Raises:
+        ValueError: If the sanitized name is empty.
+    """
+    # Remove special characters and spaces, and convert to lowercase
+    name = re.sub(r'[^a-zA-Z0-9-]', '', name.lower())
+    # Remove consecutive hyphens and leading/trailing hyphens
+    name = re.sub(r'-+', '-', name).strip('-')
+
+    # Ensure the name is not empty
+    if not name:
+        raise ValueError("Invalid bucket name after sanitization")
+
+    return name
+
+
+def generate_bucket_name(
+    app_name: str
+) -> str:
+    """
+    Generates a unique bucket name by sanitizing the provided application name and appending a truncated UUID.
+
+    Args:
+        app_name (str): The name of the application for which the bucket is being created.
+
+    Returns:
+        str: A unique bucket name.
+    """
+    # Sanitize the app name
+    sanitized_app_name = sanitize_name(app_name)
+    # Generate a UUID4 code
+    uuid_code = str(uuid.uuid4()).replace('-', '')
+    # Maximum length for the UUID4 code to fit within 63 characters
+    max_uuid_length = 63 - len(sanitized_app_name) - 1  # Subtract 1 for the hyphen
+
+    if max_uuid_length < 1:
+        # Create the bucket name using just the sanitized app name 
+        bucket_name = sanitized_app_name[:63]
+    else:
+        # Truncate or limit the UUID4 code to fit within the maximum length
+        truncated_uuid_code = uuid_code[:max_uuid_length]
+        # Concatenate the sanitized app name and truncated UUID4 code
+        bucket_name = f"{sanitized_app_name}-{truncated_uuid_code}"
+
+    return bucket_name
+
+
+def generate_dataset_name(
+    app_name: str
+) -> str:
+    """
+    Generates a unique dataset name by sanitizing the provided application name and appending a truncated UUID.
+
+    Args:
+        app_name (str): The name of the application for which the dataset is being created.
+
+    Returns:
+        str: A unique dataset name.
+    """
+    # Sanitize the app name
+    sanitized_app_name = sanitize_name(app_name)
+    # Generate a UUID4 code
+    uuid_code = str(uuid.uuid4()).replace('-', '')
+    # Maximum length for the UUID4 code to fit within 1024 characters (BigQuery limit)
+    max_uuid_length = 1024 - len(sanitized_app_name) - 1  # Subtract 1 for the underscore
+
+    if max_uuid_length < 1:
+        # Create the dataset name using just the sanitized app name 
+        dataset_name = sanitized_app_name[:1024]
+    else:  
+        # Truncate or limit the UUID4 code to fit within the maximum length
+        truncated_uuid_code = uuid_code[:max_uuid_length]
+        # Concatenate the sanitized app name and truncated UUID4 code with an underscore
+        dataset_name = f"{sanitized_app_name}_{truncated_uuid_code}"
+
+    return dataset_name
+
+
+def create_gcs_bucket(
+    bucket_name: str, 
+    app_name: str,
+    project_name: str,
+    bucket_location: str = "us-central1", 
+    bucket_class: str = "STANDARD",
+) -> None:
+    """
+    Creates a Cloud Storage Bucket in a Google Cloud project.
+
+    Args:
+    - bucket_name (str): The name of the Google Cloud Storage Bucket.
+    - bucket_location (str): The GCP location to host the Google Cloud Storage Bucket. 
+    - bucket_class (str): Kind of Google Cloud Storage Bucket depending on storage time. Possible values: STANDARD, NEARLINE, COLDLINE.
+    """
+    storage_client = storage.Client(project='ml-framework-config')
+    try:
+        bucket = storage.Bucket(storage_client, name=bucket_name)
+        bucket.labels = {"applicationName": app_name, "gitProject": project_name}
+        bucket.storage_class = bucket_class
+        bucket = storage_client.create_bucket(bucket, project='ml-framework-config', location=bucket_location) 
+        logging.info(f"Bucket {bucket.name} created.")
+    except Conflict: 
+        logging.info(f"Bucket {bucket_name} already exists.")
+    
+
+def create_bq_dataset(
+    dataset_name: str, 
+    app_name: str,
+    project_name: str,
+    dataset_location="us-central1"
+) -> None:
+    """
+    Creates a Bigquery dataset to save tables in a Google Cloud project.
+
+    Args:
+    - dataset_name (str): The name of the Bigquery Dataset.
+    - dataset_location (str): The GCP location to host the Bigquery Dataset.
+    """
+    bigquery_client = bigquery.Client(project='ml-framework-config')
+    try:
+        dataset = bigquery_client.create_dataset(dataset_name, project='ml-framework-config', location=dataset_location)
+        logging.info(f'Dataset {dataset.dataset_id} created.')
+    except AlreadyExists:
+        logging.info(f'Dataset {dataset_name} already exists.')
+
+
+def read_file_from_bucket(
+    bucket_name: str, 
+    source_blob_name: str
+) -> str:
     """
     Reads and returns the content of a blob from a specified Google Cloud Storage bucket.
 
@@ -33,9 +199,9 @@ def read_file_from_bucket(bucket_name: str, source_blob_name: str) -> str:
 def create_service_account_ml_framework_projects(
     account_name: str, account_description: str,
     project_id: str, service_account_key_json: Dict
-) -> str:
+) -> None:
     """
-    Creates a new service account in a Google Cloud project and returns its name.
+    Creates a new service account in a Google Cloud project.
 
     Args:
     - account_name (str): The name to assign to the new service account.
@@ -44,9 +210,6 @@ def create_service_account_ml_framework_projects(
         be created.
     - service_account_key_json (Dict): The service account key (credentials) for 
         authenticating the request, provided as a dictionary.
-
-    Returns:
-    - str: Confirmation message including the name of the created service account.
     """
     credentials = service_account.Credentials.from_service_account_info(
         service_account_key_json
@@ -68,12 +231,16 @@ def create_service_account_ml_framework_projects(
         .execute()
     )
 
-    return f'Service account created: {created_account["email"]}'
+    logging.info(f'Service account created: {created_account["email"]}')
 
 
 def create_github_project_using_cookiecutter(
-    github_token: str, new_project_name: str, template_url: str,
-    config_input: Dict, user_name: str, user_email: str
+    github_token: str, 
+    new_project_name: str, 
+    template_url: str,
+    config_input: Dict, 
+    user_name: str, 
+    user_email: str
 ) -> int:
     """
     Creates a new GitHub repository for a project, using the cookiecutter template.
@@ -85,16 +252,12 @@ def create_github_project_using_cookiecutter(
         template customization.
     - user_name (str): GitHub user name for setting up the repository.
     - user_email (str): GitHub user email for setting up the repository.
-
-    Returns:
-    - int: A message indicating the result of the operation 
-        (repository creation or error message).
     """
     try:
         g = Github(github_token)
         user = g.get_user()
         user.get_repo(new_project_name)
-        print(f'Repository {new_project_name} already exists')
+        logging.info(f'Repository {new_project_name} already exists')
         return 0
     except UnknownObjectException:
         try:
@@ -102,7 +265,7 @@ def create_github_project_using_cookiecutter(
             user = g.get_user()
             user.create_repo(new_project_name, private=True)
         except GithubException as e:
-            print(f'Repository creation error: {str(e)}')
+            logging.info(f'Repository creation error: {str(e)}')
             return 0
 
     with tempfile.TemporaryDirectory() as tmpdirname:
@@ -123,24 +286,30 @@ def create_github_project_using_cookiecutter(
         )
         os.system('git remote -v')
         os.system('git push -u origin main')
-        print(f'Repository {new_project_name} was created')
+        os.system('git branch stage')
+        os.system('git checkout stage')
+        os.system('git branch')
+        os.system('git push -u origin stage')
+
+        logging.info(f'Repository {new_project_name} was created')
         return 1
 
 
 def create_github_project_with_service_accounts(
-    file_event: Dict, context: Dict
+    file_event: Dict, 
+    context: Dict
 ) -> None:
     """
-    Responds to a Cloud Storage bucket event to create a GitHub project with service accounts.
-
-    This function is triggered by a change to a specified Cloud Storage bucket. It reads
-    configuration data from the bucket, uses cookiecutter to initialize a project, and
-    pushes it to a new GitHub repository. Additionally, it creates a new Google Cloud
-    service account for the project.
+    Orchestrates the creation of a new GitHub project with associated Google Cloud service accounts and resources. 
+    It reads configuration from a Cloud Storage bucket, uses cookiecutter for project initialization, 
+    creates a new GitHub repository, and sets up Google Cloud service accounts and resources like GCS buckets and BigQuery datasets.
 
     Args:
-    - file_event (Dict): The event payload containing information about the change in the bucket.
-    - context (Dict): Metadata for the event.
+        file_event (Dict): The event payload containing information about the change in the Cloud Storage bucket.
+        context (Dict): Metadata for the event.
+
+    Note:
+        This function is designed to be triggered by a change to a specified Cloud Storage bucket.
     """
     github_token = os.getenv('GITHUB_TOKEN_SECRET')
     template_url = (
@@ -158,19 +327,33 @@ def create_github_project_with_service_accounts(
     credential_maas_json = json.loads(
         os.getenv('GOOGLE_APPLICATION_CREDENTIALS_MAAS')
     )
+
     maas_project_id = 'ml-framework-maas'
-    new_service_account_maas_name = 'app-' + str(uuid.uuid4())[:26]
+    new_service_account_maas_name = f'app-{str(uuid.uuid4())[:26]}'
+    bucket_name = generate_bucket_name(new_application_name)
+    dataset_name = generate_dataset_name(new_application_name)
+
     description_new_service_account_maas = (
         f'Service account to manage the implementation of '
         f'{new_application_name} located in '
         f'https://github.com/aquilesIIIMB/{new_project_name}.git'
     )
+
     config_input['serviceAccountMaasName'] = (
         f"{new_service_account_maas_name}@{maas_project_id}.iam.gserviceaccount.com"
     )
     config_input['serviceAccountExplorationName'] = ""
     config_input['serviceAccountDiscoveryName'] = ""
 
+    config_input['bucketMaasName'] = bucket_name
+    config_input['bucketExplorationName'] = ""
+    config_input['bucketDiscoveryName'] = ""
+
+    config_input['datasetMaasName'] = dataset_name
+    config_input['datasetExplorationName'] = ""
+    config_input['datasetDiscoveryName'] = ""
+
+    setup_logging()
 
     if create_github_project_using_cookiecutter(
         github_token, new_project_name, template_url, 
@@ -181,4 +364,12 @@ def create_github_project_with_service_accounts(
             new_service_account_maas_name, 
             description_new_service_account_maas, 
             maas_project_id, credential_maas_json
+        )
+
+        create_gcs_bucket(
+            bucket_name,
+        )
+
+        create_bq_dataset(
+            dataset_name,
         )
