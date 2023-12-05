@@ -38,6 +38,51 @@ def setup_logging(
     root_logger.addHandler(handler)
 
 
+def create_branch_protection(
+    branch: str, 
+    user_name: str, 
+    new_project_name: str,
+    github_token: str
+) -> None:
+    # Authentication
+    g = Github(github_token)
+    # Get the repository
+    repo = g.get_repo(f"{user_name}/{new_project_name}")
+
+    # Setting up branch protection rules
+    protection_settings = {
+        "required_approving_review_count": 1,
+        "dismiss_stale_reviews": True,
+        "require_code_owner_reviews": True,
+        "required_conversation_resolution": True,
+        "lock_branch": True
+    }
+    
+    # Apply protection
+    repo.get_branch(branch).edit_protection(**protection_settings)
+    
+    logging.info(f"Protection applied to branch '{branch}' in '{repo.full_name}'")
+
+
+def add_admin_role(
+    collaborator_account: str, 
+    user_name: str, 
+    new_project_name: str,
+    github_token: str
+) -> None:
+    # Authentication
+    g = Github(github_token)
+    # Get the repository
+    repo = g.get_repo(f"{user_name}/{new_project_name}")
+
+    try:
+        # Add collaborator with admin access
+        repo.add_to_collaborators(collaborator_account, permission="admin")
+        print(f"User {collaborator_account} has been added as an admin to the repository.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+
 def sanitize_name(
     name: str
 ) -> str:
@@ -264,7 +309,7 @@ def create_github_project_using_cookiecutter(
         try:
             g = Github(github_token)
             user = g.get_user()
-            user.create_repo(new_project_name, private=True)
+            user.create_repo(new_project_name, private=False)
         except GithubException as e:
             logging.info(f'Repository creation error: {str(e)}')
             return 0
@@ -287,10 +332,32 @@ def create_github_project_using_cookiecutter(
         )
         os.system('git remote -v')
         os.system('git push -u origin main')
+
+        # Create stage branch in the new Github repo
         os.system('git branch stage')
         os.system('git checkout stage')
         os.system('git branch')
         os.system('git push -u origin stage')
+
+        # Create mvp branch in the new Github repo
+        os.system('git branch mvp')
+        os.system('git checkout mvp')
+        os.system('git branch')
+        os.system('git push -u origin mvp')
+
+        create_branch_protection(
+            "main", 
+            user_name,
+            new_project_name,
+            github_token
+        )
+
+        create_branch_protection(
+            "stage", 
+            user_name,
+            new_project_name,
+            github_token
+        )
 
         logging.info(f'Repository {new_project_name} was created')
         return 1
@@ -325,6 +392,7 @@ def create_github_project_with_service_accounts(
     )
     new_project_name = config_input['projectName']
     new_application_name = config_input['applicationName']
+    adminAccounts_list = config_input['adminAccounts'].split(',')
     credential_maas_json = json.loads(
         os.getenv('GOOGLE_APPLICATION_CREDENTIALS_MAAS')
     )
@@ -360,6 +428,13 @@ def create_github_project_with_service_accounts(
         github_token, new_project_name, template_url, 
         config_input, user_name, user_email
     ):
+        for collaborator_account in adminAccounts_list:
+            add_admin_role(
+                collaborator_account,
+                user_name,
+                new_project_name,
+                github_token,
+            )
 
         create_service_account_ml_framework_projects(
             new_service_account_maas_name, 
