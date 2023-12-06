@@ -283,6 +283,11 @@ def create_service_account_ml_framework_projects(
 def create_github_project_using_cookiecutter(
     github_token: str, 
     new_project_name: str, 
+    new_application_name: str,
+    service_account: str,
+    github_token_secret_manager: str,
+    app_installation_id: str,
+    project_id: str,
     template_url: str,
     config_input: Dict, 
     user_name: str, 
@@ -359,6 +364,14 @@ def create_github_project_using_cookiecutter(
             github_token
         )
 
+        # Create a cloud build connection to github and define triggers for each branch
+        os.system(f'gcloud builds connections create github {new_project_name} --region=us-central1 --project={project_id} --authorizer-token-secret-version={github_token_secret_manager} --app-installation-id={app_installation_id}')
+        os.system(f'gcloud builds repositories create {new_project_name} --remote-uri=https://github.com/aquilesIIIMB/{new_project_name}.git --connection={new_project_name} --region=us-central1')
+
+        os.system(f'gcloud builds triggers create github --name=trigger-mvp-{new_project_name} --repository=projects/{project_id}/locations/us-central1/connections/{new_project_name}/repositories/{new_project_name} --pull-request-pattern="^stage$" --build-config="maas/mvp/cloudbuild.yaml" --region=us-central1 --service-account="projects/{project_id}/serviceAccounts/{service_account}" --description="Trigger to check artifacts created from MVP folder" --include-logs-with-status --comment-control=COMMENTS_DISABLED')
+        os.system(f'gcloud builds triggers create github --name=trigger-stage-{new_project_name} --repository=projects/{project_id}/locations/us-central1/connections/{new_project_name}/repositories/{new_project_name} --branch-pattern="^stage$" --build-config="maas/{new_application_name}/cloudbuild.yaml" --region=us-central1 --service-account="projects/{project_id}/serviceAccounts/{service_account}" --description="Trigger to generate artifacts in stage" --include-logs-with-status --comment-control=COMMENTS_DISABLED')
+        os.system(f'gcloud builds triggers create github --name=trigger-main-{new_project_name} --repository=projects/{project_id}/locations/us-central1/connections/{new_project_name}/repositories/{new_project_name} --branch-pattern="^main$" --build-config="maas/{new_application_name}/cloudbuild.yaml" --region=us-central1 --service-account="projects/{project_id}/serviceAccounts/{service_account}" --description="Trigger to generate artifacts in main" --include-logs-with-status --comment-control=COMMENTS_DISABLED')
+
         logging.info(f'Repository {new_project_name} was created')
         return 1
 
@@ -422,11 +435,16 @@ def create_github_project_with_service_accounts(
     config_input['datasetExplorationName'] = ""
     config_input['datasetDiscoveryName'] = ""
 
+    maas_github_token_secret_manager='projects/1099093996594/secrets/github-token-to-connect-cloudbuild/versions/latest'
+    maas_app_installation_id='43923583'
+
     setup_logging()
 
     if create_github_project_using_cookiecutter(
-        github_token, new_project_name, template_url, 
-        config_input, user_name, user_email
+        github_token, new_project_name, new_application_name, config_input['serviceAccountMaasName'],
+        maas_github_token_secret_manager, maas_app_installation_id, maas_project_id, 
+        template_url, config_input, 
+        user_name, user_email
     ):
         for collaborator_account in adminAccounts_list:
             add_admin_role(
