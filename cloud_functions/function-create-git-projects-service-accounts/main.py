@@ -48,7 +48,8 @@ def create_github_connection(
     project_id: str,
     github_connection_name: str,
     github_token_secret_manager: str,
-    app_installation_id: str
+    app_installation_id: str,
+    service_account_key_json: Dict
 ) -> CreateConnectionRequest:
     """
     Creates a new connection between Google Cloud Build and a GitHub repository.
@@ -86,7 +87,9 @@ def create_github_connection(
         connection_id=github_connection_name
     )
     
-    client_cb = RepositoryManagerClient()
+    client_cb = RepositoryManagerClient.from_service_account_info(
+        service_account_key_json
+    )
     create_connection_request = client_cb.create_connection(request=github_create_connection_request)
     
     logging.info(create_connection_request.result())
@@ -98,7 +101,8 @@ def create_cloud_build_repository(
     project_id: str,
     new_project_name: str,
     github_connection_name: str,
-    cloud_build_repository_name: str
+    cloud_build_repository_name: str,
+    service_account_key_json: Dict
 ) -> CreateRepositoryRequest:
     """
     Creates a new repository in Google Cloud Build that is linked to a GitHub repository.
@@ -128,7 +132,9 @@ def create_cloud_build_repository(
         repository_id=cloud_build_repository_name
     )
     
-    client_cb = RepositoryManagerClient()
+    client_cb = RepositoryManagerClient.from_service_account_info(
+        service_account_key_json
+    )
     create_repository_request = client_cb.create_repository(request=github_create_repository_request)
     
     logging.info(create_repository_request.result())
@@ -145,7 +151,8 @@ def create_github_trigger(
     branch_pattern_filter: str,
     build_config_path: str,
     service_account: str,
-    description: str
+    description: str,
+    service_account_key_json: Dict
 ) -> int:
     """
     Creates a trigger in Google Cloud Build for a GitHub repository.
@@ -168,7 +175,9 @@ def create_github_trigger(
     - str: A success message if the trigger is created successfully, or an error message otherwise.
     ```
     """
-    credentials, _ = google.auth.default()
+    credentials, _ = google.auth.load_credentials_from_dict(
+        service_account_key_json
+    )
     credentials.refresh(Request())
 
     url = f'https://cloudbuild.googleapis.com/v1/projects/{project_id}/locations/us-central1/triggers'
@@ -476,7 +485,8 @@ def create_github_project_using_cookiecutter(
     template_url: str,
     config_input: Dict, 
     user_name: str, 
-    user_email: str
+    user_email: str,
+    service_account_key_json: Dict
 ) -> int:
     """
     Creates a new GitHub repository for a project, using the cookiecutter template.
@@ -578,6 +588,7 @@ def create_github_project_using_cookiecutter(
             github_connection_name,
             github_token_secret_manager,
             app_installation_id,
+            service_account_key_json
         )
         # Create a cloud build repository from a github repostiroy in the github connection 
         create_cloud_build_repository(
@@ -585,6 +596,7 @@ def create_github_project_using_cookiecutter(
             new_project_name,
             github_connection_name,
             cloud_build_repository_name,
+            service_account_key_json
         )
         # Create github trigger for mvp branch
         create_github_trigger(
@@ -597,6 +609,7 @@ def create_github_project_using_cookiecutter(
             mvp_build_config_path,
             service_account,
             mvp_description,
+            service_account_key_json
         )
         # Create github trigger for stage branch
         create_github_trigger(
@@ -609,6 +622,7 @@ def create_github_project_using_cookiecutter(
             stage_build_config_path,
             service_account,
             stage_description,
+            service_account_key_json
         )
         # Create github trigger for main branch
         create_github_trigger(
@@ -621,6 +635,7 @@ def create_github_project_using_cookiecutter(
             main_build_config_path,
             service_account,
             main_description,
+            service_account_key_json
         )
 
         logging.info(f'Repository {new_project_name} was created')
@@ -695,7 +710,7 @@ def create_github_project_with_service_accounts(
         github_token, new_project_name, new_application_name, config_input['serviceAccountMaasName'],
         maas_github_token_secret_manager, maas_app_installation_id, maas_project_id, 
         template_url, config_input, 
-        user_name, user_email
+        user_name, user_email, credential_maas_json
     ):
         for collaborator_account in adminAccounts_list:
             add_admin_role(
