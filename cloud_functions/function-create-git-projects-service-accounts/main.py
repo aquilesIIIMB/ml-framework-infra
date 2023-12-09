@@ -15,6 +15,12 @@ import googleapiclient.discovery
 from google.api_core.exceptions import Conflict
 import logging
 from google.cloud import logging as gcp_logging
+from google.cloud.devtools.cloudbuild_v2.types import Connection, Repository, GitHubConfig, OAuthCredential, CreateConnectionRequest, CreateRepositoryRequest
+from google.cloud.devtools.cloudbuild_v2.services.repository_manager import RepositoryManagerClient
+import google.auth
+from google.auth.transport.requests import Request
+import requests
+
 
 
 def setup_logging(
@@ -36,6 +42,185 @@ def setup_logging(
     root_logger.setLevel(log_level)
     # Add the Google Cloud Logging handler to the root logger
     root_logger.addHandler(handler)
+
+
+def create_github_connection(
+    project_id: str,
+    github_connection_name: str,
+    github_token_secret_manager: str,
+    app_installation_id: str
+) -> CreateConnectionRequest:
+    """
+    Creates a new connection between Google Cloud Build and a GitHub repository.
+
+    This function utilizes Google Cloud's Repository Manager API to establish a connection
+    with GitHub, authenticated via OAuth credentials stored in Google Cloud Secret Manager.
+
+    Parameters:
+    - project_id (str): The unique identifier for your Google Cloud project.
+    - github_connection_name (str): The name for the new GitHub connection in Cloud Build.
+    - github_token_secret_manager (str): The resource identifier of the OAuth token in Google Cloud Secret Manager.
+    - app_installation_id (str): The unique identifier for the GitHub app installation.
+
+    Returns:
+    - CreateConnectionResponse: The response object from the Cloud Build API with the details
+      of the created connection.
+    ```
+    """
+    github_config_credentials = OAuthCredential(
+        oauth_token_secret_version=github_token_secret_manager
+    )
+    github_config = GitHubConfig(
+        app_installation_id=app_installation_id, 
+        authorizer_credential=github_config_credentials
+    )
+    
+    cloud_build_connection = Connection(
+        name=f'projects/{project_id}/locations/us-central1/connections/{github_connection_name}', 
+        github_config=github_config
+    )
+    
+    github_create_connection_request = CreateConnectionRequest(
+        parent=f'projects/{project_id}/locations/us-central1',
+        connection=cloud_build_connection,
+        connection_id=github_connection_name
+    )
+    
+    client_cb = RepositoryManagerClient()
+    create_connection_request = client_cb.create_connection(request=github_create_connection_request)
+    
+    logging.info(create_connection_request.result())
+    
+    return create_connection_request
+
+
+def create_cloud_build_repository(
+    project_id: str,
+    new_project_name: str,
+    github_connection_name: str,
+    cloud_build_repository_name: str
+) -> CreateRepositoryRequest:
+    """
+    Creates a new repository in Google Cloud Build that is linked to a GitHub repository.
+
+    This function sets up a repository in Cloud Build, allowing Cloud Build to interact with
+    a specified GitHub repository. It is useful for setting up CI/CD pipelines for projects hosted on GitHub.
+
+    Parameters:
+    - project_id (str): The unique identifier for your Google Cloud project.
+    - new_project_name (str): The name of the new project/repository in GitHub.
+    - github_connection_name (str): The name of the existing GitHub connection in Cloud Build.
+    - cloud_build_repository_name (str): The name you want to assign to the new repository in Cloud Build.
+
+    Returns:
+    - CreateRepositoryResponse: The response object from the Cloud Build API with the details
+      of the created repository.
+    ```
+    """
+    cloud_build_repository = Repository(
+        name=f'projects/{project_id}/locations/us-central1/repositories/{cloud_build_repository_name}', 
+        remote_uri=f"https://github.com/aquilesIIIMB/{new_project_name}.git"
+    )
+    
+    github_create_repository_request = CreateRepositoryRequest(
+        parent=f'projects/{project_id}/locations/us-central1/connections/{github_connection_name}',
+        repository=cloud_build_repository,
+        repository_id=cloud_build_repository_name
+    )
+    
+    client_cb = RepositoryManagerClient()
+    create_repository_request = client_cb.create_repository(request=github_create_repository_request)
+    
+    logging.info(create_repository_request.result())
+    
+    return create_repository_request
+
+
+def create_github_trigger(
+    project_id: str, 
+    trigger_name: str,
+    github_connection_name: str,
+    cloud_build_repository_name: str,
+    branch_pattern: str,
+    branch_pattern_filter: str,
+    build_config_path: str,
+    service_account: str,
+    description: str
+) -> int:
+    """
+    Creates a trigger in Google Cloud Build for a GitHub repository.
+
+    This function sets up a trigger in Cloud Build that responds to events (like push or pull request)
+    on a specified branch of a GitHub repository linked via a Cloud Build connection.
+
+    Parameters:
+    - project_id (str): The unique identifier of the Google Cloud project.
+    - trigger_name (str): The name for the new trigger in Cloud Build.
+    - github_connection_name (str): The name of the GitHub connection in Cloud Build.
+    - cloud_build_repository_name (str): The name of the repository in Cloud Build.
+    - branch_pattern (str): The branch name or pattern to which the trigger will respond.
+    - branch_pattern_filter (str): The type of event to respond to ('pull_request' or 'push').
+    - build_config_path (str): Path to the build configuration file in the repository.
+    - service_account (str): Service account to be used for the build.
+    - description (str): A brief description of the trigger.
+
+    Returns:
+    - str: A success message if the trigger is created successfully, or an error message otherwise.
+    ```
+    """
+    credentials, _ = google.auth.default()
+    credentials.refresh(Request())
+
+    url = f'https://cloudbuild.googleapis.com/v1/projects/{project_id}/locations/us-central1/triggers'
+
+    if branch_pattern_filter == "pull_request":
+        payload = {
+            "name": trigger_name,
+            "description": description,
+            "filename": build_config_path,
+            "serviceAccount": service_account,
+            "includeBuildLogs": "INCLUDE_BUILD_LOGS_WITH_STATUS",
+            "repositoryEventConfig": {
+                "repository": f'projects/{project_id}/locations/us-central1/connections/{github_connection_name}/repositories/{cloud_build_repository_name}',
+                "repositoryType": "GITHUB",
+                "pullRequest": {
+                    "commentControl": "COMMENTS_DISABLED",
+                    "branch": branch_pattern
+                }
+            }
+        }
+    elif branch_pattern_filter == 'push':
+        payload = {
+            "name": trigger_name,
+            "description": description,
+            "filename": build_config_path,
+            "serviceAccount": service_account,
+            "includeBuildLogs": "INCLUDE_BUILD_LOGS_WITH_STATUS",
+            "repositoryEventConfig": {
+                "repository": f'projects/{project_id}/locations/us-central1/connections/{github_connection_name}/repositories/{cloud_build_repository_name}',
+                "repositoryType": "GITHUB",
+                "push": {
+                    "branch": branch_pattern
+                }
+            }
+        }
+    else:
+        raise ValueError("Invalid branch_filter value. It could be pull_request or push")
+
+    headers = {
+        "Authorization": f"Bearer {credentials.token}",
+        "Content-Type": "application/json"
+    }
+
+    response = requests.post(url, headers=headers, json=payload)
+
+    if response.status_code == 200:
+        logging.info("GitHub trigger created successfully")
+        return 1
+    else:
+        logging.info(f"Error creating GitHub trigger. Status Code: {response.status_code}")
+        logging.info(f"Error creating GitHub trigger. Message: {response.text}")
+        return 0
 
 
 def create_branch_protection(
@@ -365,12 +550,78 @@ def create_github_project_using_cookiecutter(
         )
 
         # Create a cloud build connection to github and define triggers for each branch
-        os.system(f'gcloud builds connections create github {new_project_name} --region=us-central1 --project={project_id} --authorizer-token-secret-version={github_token_secret_manager} --app-installation-id={app_installation_id}')
-        os.system(f'gcloud builds repositories create {new_project_name} --remote-uri=https://github.com/aquilesIIIMB/{new_project_name}.git --connection={new_project_name} --region=us-central1')
+        # Trigger parameters
+        github_connection_name = f"{new_project_name}" 
+        cloud_build_repository_name = f"{new_project_name}"
 
-        os.system(f'gcloud builds triggers create github --name=trigger-mvp-{new_project_name} --repository=projects/{project_id}/locations/us-central1/connections/{new_project_name}/repositories/{new_project_name} --pull-request-pattern="^stage$" --build-config="maas/mvp/cloudbuild.yaml" --region=us-central1 --service-account="projects/{project_id}/serviceAccounts/{service_account}" --description="Trigger to check artifacts created from MVP folder" --include-logs-with-status --comment-control=COMMENTS_DISABLED')
-        os.system(f'gcloud builds triggers create github --name=trigger-stage-{new_project_name} --repository=projects/{project_id}/locations/us-central1/connections/{new_project_name}/repositories/{new_project_name} --branch-pattern="^stage$" --build-config="maas/{new_application_name}/cloudbuild.yaml" --region=us-central1 --service-account="projects/{project_id}/serviceAccounts/{service_account}" --description="Trigger to generate artifacts in stage" --include-logs-with-status --comment-control=COMMENTS_DISABLED')
-        os.system(f'gcloud builds triggers create github --name=trigger-main-{new_project_name} --repository=projects/{project_id}/locations/us-central1/connections/{new_project_name}/repositories/{new_project_name} --branch-pattern="^main$" --build-config="maas/{new_application_name}/cloudbuild.yaml" --region=us-central1 --service-account="projects/{project_id}/serviceAccounts/{service_account}" --description="Trigger to generate artifacts in main" --include-logs-with-status --comment-control=COMMENTS_DISABLED')
+        mvp_trigger_name = f"trigger-mvp-{new_project_name}"
+        mvp_branch_pattern_filter = 'pull_request'
+        mvp_branch_pattern = "^stage$"
+        mvp_description = "Trigger to check artifacts created from mvp folder"
+        mvp_build_config_path = "maas/mvp/cloudbuild.yaml"
+
+        stage_trigger_name = f"trigger-stage-{new_project_name}"
+        stage_branch_pattern_filter = 'push'
+        stage_branch_pattern = "^stage$"
+        stage_description = "Trigger to generate artifacts in stage"
+        stage_build_config_path = f"maas/{new_application_name}/cloudbuild.yaml"
+
+        main_trigger_name = f"trigger-main-{new_project_name}"
+        main_branch_pattern_filter = 'push'
+        main_branch_pattern = "^main$"
+        main_description = "Trigger to generate artifacts in main"
+        main_build_config_path = f"maas/{new_application_name}/cloudbuild.yaml"
+
+        # Create a github connection to read the repositories in github from cloud build
+        create_github_connection(
+            project_id,
+            github_connection_name,
+            github_token_secret_manager,
+            app_installation_id,
+        )
+        # Create a cloud build repository from a github repostiroy in the github connection 
+        create_cloud_build_repository(
+            project_id,
+            new_project_name,
+            github_connection_name,
+            cloud_build_repository_name,
+        )
+        # Create github trigger for mvp branch
+        create_github_trigger(
+            project_id,
+            mvp_trigger_name,
+            github_connection_name,
+            cloud_build_repository_name,
+            mvp_branch_pattern,
+            mvp_branch_pattern_filter,
+            mvp_build_config_path,
+            service_account,
+            mvp_description,
+        )
+        # Create github trigger for stage branch
+        create_github_trigger(
+            project_id,
+            stage_trigger_name,
+            github_connection_name,
+            cloud_build_repository_name,
+            stage_branch_pattern,
+            stage_branch_pattern_filter,
+            stage_build_config_path,
+            service_account,
+            stage_description,
+        )
+        # Create github trigger for main branch
+        create_github_trigger(
+            project_id,
+            main_trigger_name,
+            github_connection_name,
+            cloud_build_repository_name,
+            main_branch_pattern,
+            main_branch_pattern_filter,
+            main_build_config_path,
+            service_account,
+            main_description,
+        )
 
         logging.info(f'Repository {new_project_name} was created')
         return 1
