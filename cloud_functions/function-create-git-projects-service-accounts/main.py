@@ -189,7 +189,7 @@ def create_github_trigger(
             "name": trigger_name,
             "description": description,
             "filename": build_config_path,
-            "serviceAccount": service_account_email,
+            "serviceAccount": f'projects/{project_id}/serviceAccounts/{service_account_email}',
             "includeBuildLogs": "INCLUDE_BUILD_LOGS_WITH_STATUS",
             "repositoryEventConfig": {
                 "repository": f'projects/{project_id}/locations/us-central1/connections/{github_connection_name}/repositories/{cloud_build_repository_name}',
@@ -205,7 +205,7 @@ def create_github_trigger(
             "name": trigger_name,
             "description": description,
             "filename": build_config_path,
-            "serviceAccount": service_account_email,
+            "serviceAccount": f'projects/{project_id}/serviceAccounts/{service_account_email}',
             "includeBuildLogs": "INCLUDE_BUILD_LOGS_WITH_STATUS",
             "repositoryEventConfig": {
                 "repository": f'projects/{project_id}/locations/us-central1/connections/{github_connection_name}/repositories/{cloud_build_repository_name}',
@@ -229,6 +229,8 @@ def create_github_trigger(
         logging.info("GitHub trigger created successfully")
         return 1
     else:
+        logging.info(f'headers: {headers}')
+        logging.info(f'payload: {payload}')
         logging.info(f"Error creating GitHub trigger. Status Code: {response.status_code}")
         logging.info(f"Error creating GitHub trigger. Message: {response.text}")
         return 0
@@ -480,7 +482,7 @@ def create_github_project_using_cookiecutter(
     github_token: str, 
     new_project_name: str, 
     new_application_name: str,
-    service_account: str,
+    service_account_email: str,
     github_token_secret_manager: str,
     app_installation_id: str,
     project_id: str,
@@ -609,7 +611,7 @@ def create_github_project_using_cookiecutter(
             mvp_branch_pattern,
             mvp_branch_pattern_filter,
             mvp_build_config_path,
-            service_account,
+            service_account_email,
             mvp_description,
             service_account_key_json
         )
@@ -622,7 +624,7 @@ def create_github_project_using_cookiecutter(
             stage_branch_pattern,
             stage_branch_pattern_filter,
             stage_build_config_path,
-            service_account,
+            service_account_email,
             stage_description,
             service_account_key_json
         )
@@ -635,7 +637,7 @@ def create_github_project_using_cookiecutter(
             main_branch_pattern,
             main_branch_pattern_filter,
             main_build_config_path,
-            service_account,
+            service_account_email,
             main_description,
             service_account_key_json
         )
