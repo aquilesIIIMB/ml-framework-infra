@@ -150,7 +150,7 @@ def create_github_trigger(
     branch_pattern: str,
     branch_pattern_filter: str,
     build_config_path: str,
-    service_account: str,
+    service_account_email: str,
     description: str,
     service_account_key_json: Dict
 ) -> int:
@@ -175,8 +175,10 @@ def create_github_trigger(
     - str: A success message if the trigger is created successfully, or an error message otherwise.
     ```
     """
-    credentials, _ = google.auth.load_credentials_from_dict(
-        service_account_key_json
+    # Load credentials from service account JSON
+    credentials = service_account.Credentials.from_service_account_info(
+        service_account_key_json,
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
     )
     credentials.refresh(Request())
 
@@ -187,7 +189,7 @@ def create_github_trigger(
             "name": trigger_name,
             "description": description,
             "filename": build_config_path,
-            "serviceAccount": service_account,
+            "serviceAccount": service_account_email,
             "includeBuildLogs": "INCLUDE_BUILD_LOGS_WITH_STATUS",
             "repositoryEventConfig": {
                 "repository": f'projects/{project_id}/locations/us-central1/connections/{github_connection_name}/repositories/{cloud_build_repository_name}',
@@ -203,7 +205,7 @@ def create_github_trigger(
             "name": trigger_name,
             "description": description,
             "filename": build_config_path,
-            "serviceAccount": service_account,
+            "serviceAccount": service_account_email,
             "includeBuildLogs": "INCLUDE_BUILD_LOGS_WITH_STATUS",
             "repositoryEventConfig": {
                 "repository": f'projects/{project_id}/locations/us-central1/connections/{github_connection_name}/repositories/{cloud_build_repository_name}',
