@@ -481,16 +481,10 @@ def create_service_account_ml_framework_projects(
 def create_github_project_using_cookiecutter(
     github_token: str, 
     new_project_name: str, 
-    new_application_name: str,
-    service_account_email: str,
-    github_token_secret_manager: str,
-    app_installation_id: str,
-    project_id: str,
     template_url: str,
     config_input: Dict, 
     user_name: str, 
-    user_email: str,
-    service_account_key_json: Dict
+    user_email: str
 ) -> int:
     """
     Creates a new GitHub repository for a project, using the cookiecutter template.
@@ -563,87 +557,97 @@ def create_github_project_using_cookiecutter(
             github_token
         )
 
-        # Create a cloud build connection to github and define triggers for each branch
-        # Trigger parameters
-        github_connection_name = f"{new_project_name}" 
-        cloud_build_repository_name = f"{new_project_name}"
-
-        mvp_trigger_name = f"trigger-mvp-{new_project_name}"
-        mvp_branch_pattern_filter = 'pull_request'
-        mvp_branch_pattern = "^stage$"
-        mvp_description = "Trigger to check artifacts created from mvp folder"
-        mvp_build_config_path = "maas/mvp/cloudbuild.yaml"
-
-        stage_trigger_name = f"trigger-stage-{new_project_name}"
-        stage_branch_pattern_filter = 'push'
-        stage_branch_pattern = "^stage$"
-        stage_description = "Trigger to generate artifacts in stage"
-        stage_build_config_path = f"maas/{new_application_name}/cloudbuild.yaml"
-
-        main_trigger_name = f"trigger-main-{new_project_name}"
-        main_branch_pattern_filter = 'push'
-        main_branch_pattern = "^main$"
-        main_description = "Trigger to generate artifacts in main"
-        main_build_config_path = f"maas/{new_application_name}/cloudbuild.yaml"
-
-        # Create a github connection to read the repositories in github from cloud build
-        create_github_connection(
-            project_id,
-            github_connection_name,
-            github_token_secret_manager,
-            app_installation_id,
-            service_account_key_json
-        )
-        # Create a cloud build repository from a github repostiroy in the github connection 
-        create_cloud_build_repository(
-            project_id,
-            new_project_name,
-            github_connection_name,
-            cloud_build_repository_name,
-            service_account_key_json
-        )
-        # Create github trigger for mvp branch
-        create_github_trigger(
-            project_id,
-            mvp_trigger_name,
-            github_connection_name,
-            cloud_build_repository_name,
-            mvp_branch_pattern,
-            mvp_branch_pattern_filter,
-            mvp_build_config_path,
-            service_account_email,
-            mvp_description,
-            service_account_key_json
-        )
-        # Create github trigger for stage branch
-        create_github_trigger(
-            project_id,
-            stage_trigger_name,
-            github_connection_name,
-            cloud_build_repository_name,
-            stage_branch_pattern,
-            stage_branch_pattern_filter,
-            stage_build_config_path,
-            service_account_email,
-            stage_description,
-            service_account_key_json
-        )
-        # Create github trigger for main branch
-        create_github_trigger(
-            project_id,
-            main_trigger_name,
-            github_connection_name,
-            cloud_build_repository_name,
-            main_branch_pattern,
-            main_branch_pattern_filter,
-            main_build_config_path,
-            service_account_email,
-            main_description,
-            service_account_key_json
-        )
-
         logging.info(f'Repository {new_project_name} was created')
         return 1
+
+
+def create_cloud_build_ci_config(
+    new_project_name: str, 
+    new_application_name: str,
+    service_account_email: str,
+    github_token_secret_manager: str,
+    app_installation_id: str,
+    project_id: str,
+    service_account_key_json: Dict
+):
+    # Create a cloud build connection to github and define triggers for each branch
+    # Trigger parameters
+    github_connection_name = f"{new_project_name}" 
+    cloud_build_repository_name = f"{new_project_name}"
+
+    mvp_trigger_name = f"trigger-mvp-{new_project_name}"
+    mvp_branch_pattern_filter = 'pull_request'
+    mvp_branch_pattern = "^stage$"
+    mvp_description = "Trigger to check artifacts created from mvp folder"
+    mvp_build_config_path = "maas/mvp/cloudbuild.yaml"
+
+    stage_trigger_name = f"trigger-stage-{new_project_name}"
+    stage_branch_pattern_filter = 'push'
+    stage_branch_pattern = "^stage$"
+    stage_description = "Trigger to generate artifacts in stage"
+    stage_build_config_path = f"maas/{new_application_name}/cloudbuild.yaml"
+
+    main_trigger_name = f"trigger-main-{new_project_name}"
+    main_branch_pattern_filter = 'push'
+    main_branch_pattern = "^main$"
+    main_description = "Trigger to generate artifacts in main"
+    main_build_config_path = f"maas/{new_application_name}/cloudbuild.yaml"
+
+    # Create a github connection to read the repositories in github from cloud build
+    create_github_connection(
+        project_id,
+        github_connection_name,
+        github_token_secret_manager,
+        app_installation_id,
+        service_account_key_json
+    )
+    # Create a cloud build repository from a github repostiroy in the github connection 
+    create_cloud_build_repository(
+        project_id,
+        new_project_name,
+        github_connection_name,
+        cloud_build_repository_name,
+        service_account_key_json
+    )
+    # Create github trigger for mvp branch
+    create_github_trigger(
+        project_id,
+        mvp_trigger_name,
+        github_connection_name,
+        cloud_build_repository_name,
+        mvp_branch_pattern,
+        mvp_branch_pattern_filter,
+        mvp_build_config_path,
+        service_account_email,
+        mvp_description,
+        service_account_key_json
+    )
+    # Create github trigger for stage branch
+    create_github_trigger(
+        project_id,
+        stage_trigger_name,
+        github_connection_name,
+        cloud_build_repository_name,
+        stage_branch_pattern,
+        stage_branch_pattern_filter,
+        stage_build_config_path,
+        service_account_email,
+        stage_description,
+        service_account_key_json
+    )
+    # Create github trigger for main branch
+    create_github_trigger(
+        project_id,
+        main_trigger_name,
+        github_connection_name,
+        cloud_build_repository_name,
+        main_branch_pattern,
+        main_branch_pattern_filter,
+        main_build_config_path,
+        service_account_email,
+        main_description,
+        service_account_key_json
+    )
 
 
 def create_github_project_with_service_accounts(
@@ -706,15 +710,13 @@ def create_github_project_with_service_accounts(
     config_input['datasetDiscoveryName'] = ""
 
     maas_github_token_secret_manager='projects/1099093996594/secrets/github-token-to-connect-cloudbuild/versions/latest'
-    maas_app_installation_id='43923583'
+    github_cloudbuild_app_installation_id='43923583'
 
     setup_logging()
 
     if create_github_project_using_cookiecutter(
-        github_token, new_project_name, new_application_name, config_input['serviceAccountMaasName'],
-        maas_github_token_secret_manager, maas_app_installation_id, maas_project_id, 
-        template_url, config_input, 
-        user_name, user_email, credential_maas_json
+        github_token, new_project_name, template_url,
+        config_input, user_name, user_email,
     ):
         for collaborator_account in adminAccounts_list:
             add_admin_role(
@@ -728,6 +730,16 @@ def create_github_project_with_service_accounts(
             new_service_account_maas_name, 
             description_new_service_account_maas, 
             maas_project_id, credential_maas_json
+        )
+
+        create_cloud_build_ci_config(
+            new_project_name,
+            new_application_name,
+            config_input['serviceAccountMaasName'],
+            maas_github_token_secret_manager,
+            github_cloudbuild_app_installation_id,
+            maas_project_id,
+            credential_maas_json,
         )
 
         create_gcs_bucket(
