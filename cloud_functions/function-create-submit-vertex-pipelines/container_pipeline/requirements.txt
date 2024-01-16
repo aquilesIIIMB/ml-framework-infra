@@ -1,0 +1,6 @@
+-e git+https://35f77c7c0ac2315262df2c15733b3ea01a2e0557@gecgithub01.walmart.com/Walmart-Tech-Chile/aiexploitation-mlops-utils.git#egg=pathfinders-utils
+pytz==2023.3.post1
+kfp==2.4.0
+kfp-pipeline-spec==0.2.2
+google-cloud-aiplatform==1.37.0
+google-cloud-pipeline-components==2.6.0
